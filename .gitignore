@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.xlsx
+!tests/sample_screenshots/*.xlsx
+.DS_Store
+.vscode/settings.json
