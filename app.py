@@ -29,7 +29,7 @@ if "uploader_key" not in st.session_state:
 st.title("Pixel-Flow")
 st.write("Upload screenshots, review the extracted transactions, and export them to Excel.")
 
-header_col, reset_col = st.columns([5, 1])
+header_col, reset_col = st.columns([8, 1])
 with header_col:
     st.caption("Use this workflow to process KBZ Pay or AYA Pay screenshots in a consistent, reviewable way.")
 with reset_col:

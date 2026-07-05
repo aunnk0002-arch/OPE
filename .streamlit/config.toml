@@ -1,2 +1,3 @@
 [theme]
-primaryColor = "#6366F1"
+base = "dark"
+primaryColor = "#F97316"
