@@ -21,107 +21,35 @@ from core.template_detector import detect_and_parse
 from core.excel_exporter import build_workbook
 from models.transaction import Transaction
 
-st.set_page_config(page_title="Payment Screenshot to Excel", layout="wide")
+st.set_page_config(page_title="Pixel-Flow", layout="wide")
 
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background: linear-gradient(135deg, #0f1117 0%, #151a28 100%);
-    }
-    .block-container {
-        padding-top: 1.6rem;
-        padding-bottom: 2.5rem;
-    }
-    .hero-card, .panel-card, .metric-card {
-        background: rgba(26, 29, 39, 0.92);
-        border: 1px solid rgba(99, 102, 241, 0.18);
-        border-radius: 18px;
-        padding: 1.1rem 1.2rem;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
-        margin-bottom: 1rem;
-    }
-    .hero-title {
-        font-size: 2rem;
-        font-weight: 700;
-        margin-bottom: 0.2rem;
-    }
-    .hero-subtitle {
-        color: #c7d2fe;
-        margin-bottom: 0.25rem;
-    }
-    .step-pill {
-        display: inline-block;
-        width: 100%;
-        text-align: center;
-        background: rgba(99, 102, 241, 0.14);
-        border: 1px solid rgba(99, 102, 241, 0.26);
-        border-radius: 999px;
-        padding: 0.45rem 0.8rem;
-        font-weight: 600;
-        color: #e2e8f0;
-        margin-bottom: 0.4rem;
-    }
-    .metric-label {
-        font-size: 0.84rem;
-        color: #94a3b8;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-    }
-    .metric-value {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #f8fafc;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-with st.container():
-    st.markdown(
-        """
-        <div class="hero-card">
-            <div class="hero-title">Payment Screenshot to Excel</div>
-            <div class="hero-subtitle">Upload a folder of screenshots, extract the transaction details, review them, and export a polished spreadsheet.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-steps = ["Upload", "OCR & Parse", "Review", "Export"]
-step_cols = st.columns(len(steps))
-for idx, step in enumerate(steps):
-    with step_cols[idx]:
-        st.markdown(f"<div class='step-pill'>{idx + 1}. {step}</div>", unsafe_allow_html=True)
+st.title("Pixel-Flow")
+st.write("Upload screenshots, review the extracted transactions, and export them to Excel.")
 
 header_col, reset_col = st.columns([5, 1])
 with header_col:
     st.caption("Use this workflow to process KBZ Pay or AYA Pay screenshots in a consistent, reviewable way.")
 with reset_col:
-    if st.button("Start Over", width="stretch"):
+    if st.button("Start Over"):
         st.session_state.pop("results", None)
         st.session_state["uploader_key"] += 1
         st.rerun()
 
-with st.container():
-    st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
-    uploaded_files = st.file_uploader(
-        "Upload a folder of screenshots, or select individual files",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files="directory",
-        key=f"uploader_{st.session_state['uploader_key']}",
-    )
-    st.markdown(
-        "**Tip:** choose an entire folder in the picker dialog or drag and drop it directly onto the uploader above. The app will pick up the images from the selected folder automatically."
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+uploaded_files = st.file_uploader(
+    "Upload a folder of screenshots, or select individual files",
+    type=["png", "jpg", "jpeg"],
+    accept_multiple_files="directory",
+    key=f"uploader_{st.session_state['uploader_key']}",
+)
+st.caption(
+    "Choose an entire folder in the picker dialog or drag and drop it directly onto the uploader above."
+)
 
 if uploaded_files:
-    if st.button("Process screenshots", type="primary"):
+    if st.button("Process screenshots"):
         results = []
         progress = st.progress(0, text="Processing...")
 
@@ -160,11 +88,11 @@ if "results" in st.session_state:
 
     metric_cols = st.columns(3)
     with metric_cols[0]:
-        st.markdown("<div class='metric-card'><div class='metric-label'>Processed</div><div class='metric-value'>" + str(total) + "</div></div>", unsafe_allow_html=True)
+        st.metric("Processed", total)
     with metric_cols[1]:
-        st.markdown("<div class='metric-card'><div class='metric-label'>Ready</div><div class='metric-value'>" + str(clean) + "</div></div>", unsafe_allow_html=True)
+        st.metric("Ready", clean)
     with metric_cols[2]:
-        st.markdown("<div class='metric-card'><div class='metric-label'>Flagged</div><div class='metric-value'>" + str(flagged) + "</div></div>", unsafe_allow_html=True)
+        st.metric("Flagged", flagged)
 
     st.info(f"Processed: **{total}** files | Ready: **{clean}** | Flagged for review: **{flagged}**")
 
@@ -191,7 +119,6 @@ if "results" in st.session_state:
     edited_rows = st.data_editor(
         rows,
         num_rows="dynamic",
-        width="stretch",
         column_config={
             "Status": st.column_config.TextColumn(disabled=True),
             "Amount": st.column_config.NumberColumn(format="%.2f"),
@@ -209,7 +136,7 @@ if "results" in st.session_state:
                     st.write(f"**{txn.source_file}**: " + "; ".join(txn.parse_warnings))
 
     st.subheader("Export")
-    if st.button("Generate Excel file", type="primary"):
+    if st.button("Generate Excel file"):
         final_transactions = []
         for row in rows:
             final_transactions.append(Transaction(
