@@ -1,4 +1,4 @@
-"""
+﻿"""
 app.py
 
 This is the web page itself. Run it with:  streamlit run app.py
@@ -13,7 +13,6 @@ Flow:
 """
 
 import io
-import pandas as pd
 import streamlit as st
 from PIL import Image
 
@@ -60,8 +59,8 @@ if uploaded_files:
 
         for i, uploaded_file in enumerate(uploaded_files):
             try:
-                image = Image.open(uploaded_file)
-                raw_text = extract_text(image)
+                with Image.open(uploaded_file) as image:
+                    raw_text = extract_text(image)
                 txn = detect_and_parse(raw_text, uploaded_file.name)
 
                 if txn is None:
@@ -110,12 +109,11 @@ if "results" in st.session_state:
             "Remarks": txn.remarks or "",
             "Source File": txn.source_file,
         })
-    df = pd.DataFrame(rows)
-    df["_sort_key"] = df["Date"].replace("", "9999-99-99")
-    df = df.sort_values("_sort_key").drop(columns="_sort_key").reset_index(drop=True)
 
-    edited_df = st.data_editor(
-        df,
+    rows.sort(key=lambda row: row["Date"] or "9999-99-99")
+
+    edited_rows = st.data_editor(
+        rows,
         num_rows="dynamic",
         width="stretch",
         column_config={
@@ -123,7 +121,10 @@ if "results" in st.session_state:
             "Amount": st.column_config.NumberColumn(format="%.2f"),
             "Source File": st.column_config.TextColumn(disabled=True),
         },
+        key=f"review_editor_{st.session_state['uploader_key']}",
     )
+
+    rows = list(edited_rows)
 
     if flagged > 0:
         with st.expander(f"⚠️ {flagged} item(s) that may need manual review", expanded=True):
@@ -134,13 +135,13 @@ if "results" in st.session_state:
     st.subheader("Export")
     if st.button("Generate Excel file", type="primary"):
         final_transactions = []
-        for _, row in edited_df.iterrows():
+        for row in rows:
             final_transactions.append(Transaction(
-                date=row["Date"] or None,
-                category=row["Category"] or None,
-                particular=row["Particular"] or None,
-                amount=row["Amount"] if pd.notna(row["Amount"]) else None,
-                remarks=row["Remarks"] or None,
+                date=row.get("Date") or None,
+                category=row.get("Category") or None,
+                particular=row.get("Particular") or None,
+                amount=row.get("Amount") if row.get("Amount") is not None else None,
+                remarks=row.get("Remarks") or None,
             ))
 
         wb = build_workbook(final_transactions)
@@ -153,7 +154,7 @@ if "results" in st.session_state:
             label="⬇️ Download Excel file",
             data=buffer,
             file_name="transactions.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            mime="application/vnd.openxmlformats-officedocument/spreadsheetml.sheet",
         )
 else:
     st.info("Upload screenshots above, then click 'Process screenshots' to get started.")
