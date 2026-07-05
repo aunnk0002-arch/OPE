@@ -23,6 +23,30 @@ from models.transaction import Transaction
 
 st.set_page_config(page_title="Pixel-Flow", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    div.stButton > button {
+        background-color: #F97316;
+        color: white;
+        border: 1px solid #F97316;
+        border-radius: 6px;
+        width: 100%;
+        min-height: 2.6rem;
+    }
+    div.stDownloadButton > button {
+        background-color: #F97316;
+        color: white;
+        border: 1px solid #F97316;
+        border-radius: 6px;
+        width: 100%;
+        min-height: 2.6rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
@@ -81,14 +105,6 @@ if "results" in st.session_state:
     total = len(results)
     flagged = sum(1 for t in results if t.parse_warnings)
     clean = total - flagged
-
-    metric_cols = st.columns(3)
-    with metric_cols[0]:
-        st.metric("Processed", total)
-    with metric_cols[1]:
-        st.metric("Ready", clean)
-    with metric_cols[2]:
-        st.metric("Flagged", flagged)
 
     st.info(f"Processed: **{total}** files | Ready: **{clean}** | Flagged for review: **{flagged}**")
 
