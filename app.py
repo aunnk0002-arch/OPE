@@ -29,11 +29,11 @@ if "uploader_key" not in st.session_state:
 # --- Header + Start Over button -----------------------------------------
 header_col, reset_col = st.columns([5, 1])
 with header_col:
-    st.title("📄 Payment Screenshot → Excel")
+    st.title("Payment Screenshot to Excel")
     st.caption("Upload KBZ Pay / AYA Pay screenshots and get back a formatted Excel file.")
 with reset_col:
     st.write("")
-    if st.button("🔄 Start Over", width="stretch"):
+    if st.button("Start Over", width="stretch"):
         st.session_state.pop("results", None)
         st.session_state["uploader_key"] += 1
         st.rerun()
@@ -89,7 +89,7 @@ if "results" in st.session_state:
     total = len(results)
     flagged = sum(1 for t in results if t.parse_warnings)
     clean = total - flagged
-    st.info(f"📊 **{total}** file(s) processed  •  ✅ **{clean}** ready  •  ⚠️ **{flagged}** flagged for review")
+    st.info(f"**{total}** file(s) processed  |  Ready: **{clean}**  |  Flagged for review: **{flagged}**")
 
     st.subheader("Review extracted data")
     st.caption(
@@ -101,7 +101,7 @@ if "results" in st.session_state:
     rows = []
     for txn in results:
         rows.append({
-            "Status": "⚠️ Review" if txn.parse_warnings else "✅ OK",
+            "Status": "Needs Review" if txn.parse_warnings else "OK",
             "Date": txn.date or "",
             "Category": txn.category or "",
             "Particular": txn.particular or "",
@@ -127,7 +127,7 @@ if "results" in st.session_state:
     rows = list(edited_rows)
 
     if flagged > 0:
-        with st.expander(f"⚠️ {flagged} item(s) that may need manual review", expanded=True):
+        with st.expander(f"{flagged} item(s) that may need manual review", expanded=True):
             for txn in results:
                 if txn.parse_warnings:
                     st.write(f"**{txn.source_file}**: " + "; ".join(txn.parse_warnings))
@@ -149,9 +149,9 @@ if "results" in st.session_state:
         wb.save(buffer)
         buffer.seek(0)
 
-        st.success(f"✅ Excel file ready with {len(final_transactions)} transaction(s)!")
+        st.success(f"Excel file ready with {len(final_transactions)} transaction(s).")
         st.download_button(
-            label="⬇️ Download Excel file",
+            label="Download Excel file",
             data=buffer,
             file_name="transactions.xlsx",
             mime="application/vnd.openxmlformats-officedocument/spreadsheetml.sheet",
