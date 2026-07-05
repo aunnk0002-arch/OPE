@@ -27,11 +27,9 @@ if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
 st.title("Pixel-Flow")
-st.write("Upload screenshots, review the extracted transactions, and export them to Excel.")
+st.write("Turn payment screenshots into a formatted Excel file.")
 
 header_col, reset_col = st.columns([8, 1])
-with header_col:
-    st.caption("Use this workflow to process KBZ Pay or AYA Pay screenshots in a consistent, reviewable way.")
 with reset_col:
     if st.button("Start Over"):
         st.session_state.pop("results", None)
@@ -42,10 +40,8 @@ uploaded_files = st.file_uploader(
     "Upload a folder of screenshots, or select individual files",
     type=["png", "jpg", "jpeg"],
     accept_multiple_files="directory",
+    label_visibility="collapsed",
     key=f"uploader_{st.session_state['uploader_key']}",
-)
-st.caption(
-    "Choose an entire folder in the picker dialog or drag and drop it directly onto the uploader above."
 )
 
 if uploaded_files:
