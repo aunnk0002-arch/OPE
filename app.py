@@ -26,31 +26,99 @@ st.set_page_config(page_title="Payment Screenshot to Excel", layout="wide")
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 
-# --- Header + Start Over button -----------------------------------------
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #0f1117 0%, #151a28 100%);
+    }
+    .block-container {
+        padding-top: 1.6rem;
+        padding-bottom: 2.5rem;
+    }
+    .hero-card, .panel-card, .metric-card {
+        background: rgba(26, 29, 39, 0.92);
+        border: 1px solid rgba(99, 102, 241, 0.18);
+        border-radius: 18px;
+        padding: 1.1rem 1.2rem;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+        margin-bottom: 1rem;
+    }
+    .hero-title {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+    .hero-subtitle {
+        color: #c7d2fe;
+        margin-bottom: 0.25rem;
+    }
+    .step-pill {
+        display: inline-block;
+        width: 100%;
+        text-align: center;
+        background: rgba(99, 102, 241, 0.14);
+        border: 1px solid rgba(99, 102, 241, 0.26);
+        border-radius: 999px;
+        padding: 0.45rem 0.8rem;
+        font-weight: 600;
+        color: #e2e8f0;
+        margin-bottom: 0.4rem;
+    }
+    .metric-label {
+        font-size: 0.84rem;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .metric-value {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #f8fafc;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.container():
+    st.markdown(
+        """
+        <div class="hero-card">
+            <div class="hero-title">Payment Screenshot to Excel</div>
+            <div class="hero-subtitle">Upload a folder of screenshots, extract the transaction details, review them, and export a polished spreadsheet.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+steps = ["Upload", "OCR & Parse", "Review", "Export"]
+step_cols = st.columns(len(steps))
+for idx, step in enumerate(steps):
+    with step_cols[idx]:
+        st.markdown(f"<div class='step-pill'>{idx + 1}. {step}</div>", unsafe_allow_html=True)
+
 header_col, reset_col = st.columns([5, 1])
 with header_col:
-    st.title("Payment Screenshot to Excel")
-    st.caption("Upload KBZ Pay / AYA Pay screenshots and get back a formatted Excel file.")
+    st.caption("Use this workflow to process KBZ Pay or AYA Pay screenshots in a consistent, reviewable way.")
 with reset_col:
-    st.write("")
     if st.button("Start Over", width="stretch"):
         st.session_state.pop("results", None)
         st.session_state["uploader_key"] += 1
         st.rerun()
 
-# --- Upload ----------------------------------------------------------------
-uploaded_files = st.file_uploader(
-    "Upload a folder of screenshots, or select individual files",
-    type=["png", "jpg", "jpeg"],
-    accept_multiple_files="directory",
-    key=f"uploader_{st.session_state['uploader_key']}",
-)
-
-st.markdown(
-    "**Tip:** click 'Browse files' and select an entire folder in the dialog "
-    "that opens, or drag-and-drop a folder directly onto the box above. Every "
-    "image inside (including subfolders) will be picked up automatically."
-)
+with st.container():
+    st.markdown("<div class='panel-card'>", unsafe_allow_html=True)
+    uploaded_files = st.file_uploader(
+        "Upload a folder of screenshots, or select individual files",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files="directory",
+        key=f"uploader_{st.session_state['uploader_key']}",
+    )
+    st.markdown(
+        "**Tip:** choose an entire folder in the picker dialog or drag and drop it directly onto the uploader above. The app will pick up the images from the selected folder automatically."
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded_files:
     if st.button("Process screenshots", type="primary"):
@@ -89,13 +157,21 @@ if "results" in st.session_state:
     total = len(results)
     flagged = sum(1 for t in results if t.parse_warnings)
     clean = total - flagged
-    st.info(f"**{total}** file(s) processed  |  Ready: **{clean}**  |  Flagged for review: **{flagged}**")
+
+    metric_cols = st.columns(3)
+    with metric_cols[0]:
+        st.markdown("<div class='metric-card'><div class='metric-label'>Processed</div><div class='metric-value'>" + str(total) + "</div></div>", unsafe_allow_html=True)
+    with metric_cols[1]:
+        st.markdown("<div class='metric-card'><div class='metric-label'>Ready</div><div class='metric-value'>" + str(clean) + "</div></div>", unsafe_allow_html=True)
+    with metric_cols[2]:
+        st.markdown("<div class='metric-card'><div class='metric-label'>Flagged</div><div class='metric-value'>" + str(flagged) + "</div></div>", unsafe_allow_html=True)
+
+    st.info(f"Processed: **{total}** files | Ready: **{clean}** | Flagged for review: **{flagged}**")
 
     st.subheader("Review extracted data")
     st.caption(
         "Double-click any cell to correct it. Rows with warnings are flagged below the table. "
-        "You can also delete a row (e.g. if a screenshot wasn't actually a payment) using the "
-        "row menu on the left of the table."
+        "You can also delete a row if a screenshot should not be included."
     )
 
     rows = []
