@@ -83,6 +83,12 @@ if "results" in st.session_state:
             "Source File": txn.source_file,
         })
     df = pd.DataFrame(rows)
+    # Sort by date so the review table is always in chronological order,
+    # regardless of the order files were uploaded/selected in. Rows with
+    # no detected date (blank string) are pushed to the bottom rather
+    # than the top.
+    df["_sort_key"] = df["Date"].replace("", "9999-99-99")
+    df = df.sort_values("_sort_key").drop(columns="_sort_key").reset_index(drop=True)
 
     edited_df = st.data_editor(
         df,

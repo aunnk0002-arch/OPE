@@ -1,19 +1,21 @@
 """
 parsers/kbz_pay.py
 
-Handles KBZ Pay screenshots. We found two visual templates in real
-samples:
+Handles KBZ Pay screenshots. Real samples have shown FOUR layout
+variants so far:
   1. "E-Receipt" (saved/shared receipt, blue card design)
   2. "Payment Successful" (in-app confirmation screen, status bar visible)
+  3. "Details" (transaction history detail view -- opened by tapping a
+     past transaction; field labels ARE usually readable here)
+  4. Merchant/bill payments (e.g. "Customer Buy Goods", "OnlinePayment
+     MINIAPP") -- these have NO masked-phone-in-parentheses pattern
+     (since there's no person, just a merchant code + name), and often
+     include extra fields like "Service Fee" and "Total Amount"
 
-Both templates have the same underlying data in the same order. We
-don't rely on field labels (some are too low-contrast for OCR to read
-reliably) -- instead we match on value PATTERNS (date format, "Ks"
-currency suffix, masked-phone-in-parentheses, etc), working line by
-line rather than on one flattened blob of text. Line-by-line matching
-avoids a bug we hit during testing: flattening the whole receipt into
-one string let the word "Transfer" (from the "Transaction Type" line)
-bleed into the start of the counterparty name on the next line.
+All variants share the same underlying field order, so one parser
+handles all of them. We don't rely purely on field labels (some are
+too low-contrast for OCR), so we combine label-matching (when labels
+ARE readable) with positional pattern-matching as a fallback.
 """
 
 import re
@@ -22,12 +24,20 @@ from models.transaction import Transaction
 
 DATE_PATTERN = re.compile(r"(\d{2}/\d{2}/\d{4})\s+\d{2}:\d{2}:\d{2}")
 AMOUNT_KS_PATTERN = re.compile(r"(-?[\d,]+\.\d{2})\s*Ks")
-# Matches a masked phone in parentheses, allowing OCR to sometimes
-# insert a stray space inside the digits, e.g. "(******5 588)"
 MASKED_PHONE_PATTERN = re.compile(r"\(\*+[\s\d]+\)")
 NAME_WITH_PHONE_PATTERN = re.compile(
     r"^([A-Za-z][A-Za-z\s\.]+?)\s*\(\*+[\s\d]+\)\s*$"
 )
+TRANSFER_TO_LABEL_PATTERN = re.compile(r"^Transfer To\s*(.*)$", re.IGNORECASE)
+# Transaction type values that carry no counterparty info by themselves
+KNOWN_TYPE_ONLY_LINES = {
+    "transfer", "onlinepayment miniapp", "customer buy goods",
+    "cash in", "cash out", "top up",
+}
+# KBZ Pay transaction numbers observed so far all start with "0100"
+# and run ~18-20 digits total -- a strong signal even when no other
+# branding text is readable (e.g. the "Details" history screen).
+KBZ_TXN_NO_PATTERN = re.compile(r"\b0100\d{14,18}\b")
 BOILERPLATE_MARKERS = ("thank you for using", "save e-receipt", "e-receipt only means")
 
 
@@ -39,7 +49,14 @@ class KbzPayParser(BaseParser):
         has_kbz_branding = "kbz" in text
         has_ks_currency = bool(re.search(r"\bks\b", text))
         has_masked_phone = bool(MASKED_PHONE_PATTERN.search(raw_text))
-        return has_kbz_branding or (has_ks_currency and has_masked_phone)
+        has_kbz_txn_no = bool(KBZ_TXN_NO_PATTERN.search(raw_text))
+        has_transaction_labels = ("transaction time" in text) or ("transaction no" in text)
+        return (
+            has_kbz_branding
+            or (has_ks_currency and has_masked_phone)
+            or (has_ks_currency and has_kbz_txn_no)
+            or (has_ks_currency and has_transaction_labels)
+        )
 
     def parse(self, raw_text: str, source_file: str) -> Transaction:
         warnings = []
@@ -60,7 +77,7 @@ class KbzPayParser(BaseParser):
         else:
             warnings.append("date not found")
 
-        # --- Amount + locate its line index (needed for notes extraction)
+        # --- Amount + locate its line index (needed for name/notes extraction)
         amount_line_idx = None
         for idx, line in enumerate(lines):
             m = AMOUNT_KS_PATTERN.search(line)
@@ -71,38 +88,89 @@ class KbzPayParser(BaseParser):
         if txn.amount is None:
             warnings.append("amount not found")
 
-        # --- Counterparty name (line-by-line, so "Transfer" on a
-        # separate line never bleeds into the name)
-        found_name = False
-        for idx, line in enumerate(lines):
-            same_line_match = NAME_WITH_PHONE_PATTERN.match(line)
-            if same_line_match:
-                txn.particular = same_line_match.group(1).strip()
-                found_name = True
-                break
-            # Handle case where name and masked phone are on two lines
-            if MASKED_PHONE_PATTERN.fullmatch(line) and idx > 0:
-                candidate = lines[idx - 1]
-                if candidate.lower() not in ("transfer",) and len(candidate) > 2:
-                    txn.particular = candidate.strip()
-                    found_name = True
-                    break
-        if not found_name:
+        # --- Counterparty / Particular
+        particular, found = self._extract_particular(lines, amount_line_idx)
+        txn.particular = particular
+        if not found and particular is None:
             warnings.append("counterparty name not found")
 
-        # --- Notes / Remarks: the line immediately after the amount
-        # line, skipping anything that looks like boilerplate/logo noise
-        if amount_line_idx is not None:
-            notes = None
-            for line in lines[amount_line_idx + 1:]:
-                lowered = line.lower()
-                if any(marker in lowered for marker in BOILERPLATE_MARKERS):
-                    break
-                notes = line
-                break  # first non-boilerplate line only
-            txn.remarks = notes
+        # --- Notes / Remarks
+        txn.remarks = self._extract_notes(lines, amount_line_idx)
         if not txn.remarks:
-            warnings.append("notes/remarks not found")
+            # Not necessarily an error -- many merchant receipts genuinely
+            # have no notes -- but flagged so it's easy to double check.
+            warnings.append("no notes/remarks detected (may be genuinely blank)")
 
         txn.parse_warnings = warnings
         return txn
+
+    @staticmethod
+    def _extract_particular(lines, amount_line_idx):
+        """Returns (value, was_found_via_label)."""
+        # Strategy 1: explicit "Transfer To" label (readable in some
+        # templates, e.g. the "Details" history screen)
+        for idx, line in enumerate(lines):
+            m = TRANSFER_TO_LABEL_PATTERN.match(line)
+            if m:
+                value_parts = [m.group(1).strip()] if m.group(1).strip() else []
+                j = idx + 1
+                while amount_line_idx is not None and j <= amount_line_idx:
+                    nxt = lines[j]
+                    if nxt.lower().startswith("amount") or AMOUNT_KS_PATTERN.search(nxt):
+                        break
+                    value_parts.append(nxt.strip())
+                    j += 1
+                value = " ".join(p for p in value_parts if p).strip()
+                if value:
+                    return value, True
+                break  # label found but empty -- fall through to positional
+
+        # Strategy 2: positional fallback -- the counterparty normally
+        # sits on the line immediately before the amount+Ks line
+        if amount_line_idx is not None and amount_line_idx > 0:
+            idx = amount_line_idx - 1
+            candidate = lines[idx].strip()
+
+            # If that line is just a masked-phone fragment on its own
+            # (name and phone were split across two OCR lines), the
+            # real name is one line further up
+            if candidate.startswith("(") and idx > 0:
+                idx -= 1
+                candidate = lines[idx].strip()
+
+            if candidate.lower() in KNOWN_TYPE_ONLY_LINES:
+                return None, False
+
+            # Strip a trailing masked-phone parenthetical if the name
+            # and phone were on the same line, e.g. "DAW THAN AYE (******7733)"
+            paren_idx = candidate.find("(")
+            if paren_idx > 2:
+                candidate = candidate[:paren_idx].strip()
+
+            if candidate:
+                return candidate, False
+
+        return None, False
+
+    @staticmethod
+    def _extract_notes(lines, amount_line_idx):
+        if amount_line_idx is None:
+            return None
+        idx = amount_line_idx + 1
+        while idx < len(lines):
+            line = lines[idx]
+            lowered = line.lower()
+            if any(marker in lowered for marker in BOILERPLATE_MARKERS):
+                break
+            if AMOUNT_KS_PATTERN.search(line):
+                # An extra amount-like field (Service Fee / Total Amount
+                # on merchant receipts) -- not real notes, skip it
+                idx += 1
+                continue
+            if lowered == "notes":
+                # Just the "Notes" label itself with no value captured
+                # on this line -- check the next line for the real value
+                idx += 1
+                continue
+            return line
+        return None
