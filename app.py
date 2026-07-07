@@ -13,12 +13,23 @@ Flow:
 """
 
 import io
+import tempfile
+from pathlib import Path
+
 import streamlit as st
 from PIL import Image
 
 from core.ocr_engine import extract_text
 from core.template_detector import detect_and_parse
 from core.excel_exporter import build_workbook
+from core.template_store import (
+    DEFAULT_TEMPLATE,
+    delete_template,
+    list_templates,
+    load_template,
+    read_headers_from_excel,
+    save_template,
+)
 from models.transaction import Transaction
 
 st.set_page_config(page_title="Pixel-Flow", layout="wide")
@@ -49,9 +60,57 @@ st.markdown(
 
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
+if "selected_template" not in st.session_state:
+    st.session_state["selected_template"] = "Default"
 
 st.title("Pixel-Flow")
 st.write("Turn payment screenshots into a formatted Excel file.")
+
+with st.expander("Export templates", expanded=True):
+    template_name = st.text_input("Template name")
+    template_file = st.file_uploader(
+        "Upload a sample Excel file to create a custom template",
+        type=["xlsx"],
+        key="template_upload",
+    )
+    if template_file and st.button("Create template from Excel"):
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as handle:
+            handle.write(template_file.getvalue())
+            temp_path = handle.name
+        try:
+            headers = read_headers_from_excel(temp_path)
+            if headers:
+                saved_template = save_template(template_name or template_file.name, headers)
+                st.session_state["selected_template"] = saved_template["name"]
+                st.success(f"Template '{saved_template['name']}' created.")
+                st.write("Headers:", ", ".join(headers))
+            else:
+                st.warning("The uploaded file did not contain any headers.")
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
+    available_templates = ["Default"] + list_templates()
+    if st.session_state["selected_template"] not in available_templates:
+        st.session_state["selected_template"] = "Default"
+
+    selected_template_name = st.selectbox(
+        "Select export template",
+        available_templates,
+        index=available_templates.index(st.session_state["selected_template"]),
+    )
+    if selected_template_name != st.session_state["selected_template"]:
+        st.session_state["selected_template"] = selected_template_name
+        st.rerun()
+
+    selected_template = load_template(selected_template_name) or DEFAULT_TEMPLATE
+    st.caption(f"Using template: {selected_template.get('name', selected_template_name)}")
+
+    if selected_template_name != "Default":
+        if st.button("Delete selected template"):
+            if delete_template(selected_template_name):
+                st.session_state["selected_template"] = "Default"
+                st.success("Template deleted.")
+                st.rerun()
 
 header_col, reset_col = st.columns([8, 1])
 with reset_col:
@@ -159,7 +218,7 @@ if "results" in st.session_state:
                 remarks=row.get("Remarks") or None,
             ))
 
-        wb = build_workbook(final_transactions)
+        wb = build_workbook(final_transactions, template=selected_template)
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
