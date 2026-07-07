@@ -34,30 +34,6 @@ from models.transaction import Transaction
 
 st.set_page_config(page_title="Pixel-Flow", layout="wide")
 
-st.markdown(
-    """
-    <style>
-    div.stButton > button {
-        background-color: #F97316;
-        color: white;
-        border: 1px solid #F97316;
-        border-radius: 6px;
-        width: 100%;
-        min-height: 2.6rem;
-    }
-    div.stDownloadButton > button {
-        background-color: #F97316;
-        color: white;
-        border: 1px solid #F97316;
-        border-radius: 6px;
-        width: 100%;
-        min-height: 2.6rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
 if "uploader_key" not in st.session_state:
     st.session_state["uploader_key"] = 0
 if "selected_template" not in st.session_state:
@@ -123,7 +99,6 @@ uploaded_files = st.file_uploader(
     "Upload a folder of screenshots, or select individual files",
     type=["png", "jpg", "jpeg"],
     accept_multiple_files="directory",
-    label_visibility="collapsed",
     key=f"uploader_{st.session_state['uploader_key']}",
 )
 
