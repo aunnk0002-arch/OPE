@@ -37,6 +37,16 @@ GENERIC_DATE_PATTERN = re.compile(
 )
 DESCRIPTION_PATTERN = re.compile(r"Description\s+(.+?)(?:\s*\||$)")
 
+# --- Shared across all templates -----------------------------------------
+# Some templates have the label and value right next to each other
+# ("Transaction ID 266024106002"), others have several labels grouped
+# together before their values appear later ("Transaction No Transaction
+# Time" followed by "262358097414 24 Apr 2026..."). The lazy [\s\S]*?
+# lets this match across that gap and land on the first long digit run
+# after the label, which is always the actual transaction number in
+# every sample seen so far.
+TRANSACTION_ID_PATTERN = re.compile(r"Transaction (?:No\.?|ID|Code)\b[\s\S]*?(\d{6,})", re.IGNORECASE)
+
 # --- Utility / Top-up template -------------------------------------------
 UTILITY_LABELS = [
     "Transaction Type", "Transaction Code", "Transaction Status",
@@ -64,6 +74,15 @@ class AyaPayParser(BaseParser):
             source_file=source_file,
             raw_ocr_text=raw_text,
         )
+
+        # Transaction ID/No/Code -- same label pattern works across all
+        # three template variants, so we extract it once here rather
+        # than repeating this in each _parse_*_template method.
+        txn_id_match = TRANSACTION_ID_PATTERN.search(flat)
+        if txn_id_match:
+            txn.transaction_id = txn_id_match.group(1)
+        else:
+            warnings.append("transaction ID not found")
 
         is_light_template = "receiver name" in flat_lower or "sender name" in flat_lower
         is_utility_template = (

@@ -77,6 +77,13 @@ class KbzPayParser(BaseParser):
         else:
             warnings.append("date not found")
 
+        # --- Transaction ID (the long digit string starting "0100")
+        txn_no_match = KBZ_TXN_NO_PATTERN.search(flat)
+        if txn_no_match:
+            txn.transaction_id = txn_no_match.group(0)
+        else:
+            warnings.append("transaction ID not found")
+
         # --- Amount + locate its line index (needed for name/notes extraction)
         amount_line_idx = None
         for idx, line in enumerate(lines):

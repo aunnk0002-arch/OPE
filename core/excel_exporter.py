@@ -1,60 +1,70 @@
 """
 core/excel_exporter.py
 
-Builds a fixed Excel workbook from parsed transaction rows.
+Takes a list of Transaction objects and builds a .xlsx file using
+whatever columns and titles the user chose in the app -- no hardcoded
+column names. See app.py's "Customize your columns" section for how
+the column list gets built.
 """
 
-from typing import Any, Dict, List
-
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
-from config import ROW_NUMBERING_MODE
+# Every field we know how to pull from a parsed transaction, plus a
+# sensible default column width for each.
+FIELD_WIDTHS = {
+    "date": 12,
+    "category": 12,
+    "particular": 28,
+    "amount": 14,
+    "remarks": 20,
+    "transaction_id": 22,
+    "source_file": 30,
+}
 
 
-def build_workbook(transactions: list):
-    """Return an openpyxl workbook for the supplied transactions."""
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = "Transactions"
+def build_workbook(transactions: list, columns: list) -> Workbook:
+    """
+    transactions: list of Transaction objects (see models/transaction.py)
+    columns: list of {"field": <str>, "title": <str>} in the exact
+             order and with the exact titles the user chose. "field"
+             must be one of: date, category, particular, amount,
+             remarks, transaction_id, source_file.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transactions"
 
-    headers = ["Row", "Date", "Category", "Particular", "Amount", "Remarks"]
+    # --- Header row (using the user's own custom titles) ---
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
-
-    for col_idx, header in enumerate(headers, start=1):
-        cell = worksheet.cell(row=1, column=col_idx, value=header)
+    for col_idx, col in enumerate(columns, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=col["title"])
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
 
-    row_numbers = _compute_row_numbers(transactions)
-    for index, txn in enumerate(transactions):
-        row_idx = index + 2
-        worksheet.cell(row=row_idx, column=1, value=row_numbers[index])
-        worksheet.cell(row=row_idx, column=2, value=txn.date or "")
-        worksheet.cell(row=row_idx, column=3, value=txn.category or "")
-        worksheet.cell(row=row_idx, column=4, value=txn.particular or "")
-        worksheet.cell(row=row_idx, column=5, value=txn.amount if txn.amount is not None else "")
-        worksheet.cell(row=row_idx, column=6, value=txn.remarks or "")
+    # --- Data rows ---
+    for i, txn in enumerate(transactions):
+        row_idx = i + 2  # row 1 is the header
+        field_values = {
+            "date": txn.date or "",
+            "category": txn.category or "",
+            "particular": txn.particular or "",
+            "amount": txn.amount if txn.amount is not None else "",
+            "remarks": txn.remarks or "",
+            "transaction_id": txn.transaction_id or "",
+            "source_file": txn.source_file or "",
+        }
+        for col_idx, col in enumerate(columns, start=1):
+            value = field_values.get(col["field"], "")
+            ws.cell(row=row_idx, column=col_idx, value=value)
 
-    for col_idx in range(1, len(headers) + 1):
-        worksheet.column_dimensions[get_column_letter(col_idx)].width = 16
+    # --- Column widths ---
+    for col_idx, col in enumerate(columns, start=1):
+        letter = get_column_letter(col_idx)
+        ws.column_dimensions[letter].width = FIELD_WIDTHS.get(col["field"], 16)
 
-    worksheet.freeze_panes = "A2"
-    return workbook
-
-
-def _compute_row_numbers(transactions: List[Any]) -> List[int]:
-    """Return the row-number sequence for the supplied transactions."""
-    if ROW_NUMBERING_MODE == "continuous":
-        return list(range(1, len(transactions) + 1))
-
-    numbers = []
-    counters: Dict[str, int] = {}
-    for txn in transactions:
-        category = txn.category or "Unknown"
-        counters[category] = counters.get(category, 0) + 1
-        numbers.append(counters[category])
-    return numbers
+    ws.freeze_panes = "A2"
+    return wb

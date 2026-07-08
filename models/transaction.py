@@ -15,12 +15,13 @@ from typing import Optional
 
 @dataclass
 class Transaction:
-    # Core fields — map directly to your office Excel columns
+    # Core fields — shown in the review table and available for export
     date: Optional[str] = None          # Stored as "YYYY-MM-DD"
     category: Optional[str] = None      # e.g. "KPay", "AYA"
     particular: Optional[str] = None    # Counterparty name / description
     amount: Optional[float] = None      # Numeric only, no currency symbols
     remarks: Optional[str] = None       # From the screenshot's "Notes" field
+    transaction_id: Optional[str] = None  # The app's own transaction number/code
 
     # Metadata — not shown in Excel, but useful for debugging /
     # catching mistakes before export

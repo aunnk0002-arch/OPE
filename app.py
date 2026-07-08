@@ -8,12 +8,10 @@ Flow:
   2. Each image goes through OCR -> template detection -> parsing
   3. Results are shown in an editable table -- fix mistakes, delete rows
      that shouldn't be there, then export
-  4. User downloads the final Excel file
-  5. "Start Over" clears everything for the next batch
-
-Uses Streamlit's default look and feel, with a light orange accent on
-buttons. No custom Excel export templates for now -- output always
-matches the fixed office format defined in config.py.
+  4. User picks which fields to include and types their own column
+     titles -- no hardcoded column names
+  5. User downloads the final Excel file, built exactly to their spec
+  6. "Start Over" clears everything for the next batch
 """
 
 import io
@@ -24,6 +22,18 @@ from core.ocr_engine import extract_text
 from core.template_detector import detect_and_parse
 from core.excel_exporter import build_workbook
 from models.transaction import Transaction
+
+# Every field we can offer for export, with a sensible default title
+# and default on/off state.
+AVAILABLE_FIELDS = [
+    {"field": "date", "default_title": "Date", "default_on": True},
+    {"field": "category", "default_title": "Category", "default_on": True},
+    {"field": "particular", "default_title": "Particular", "default_on": True},
+    {"field": "amount", "default_title": "Amount", "default_on": True},
+    {"field": "remarks", "default_title": "Remarks", "default_on": True},
+    {"field": "transaction_id", "default_title": "Transaction ID", "default_on": False},
+    {"field": "source_file", "default_title": "Source File", "default_on": False},
+]
 
 st.set_page_config(page_title="Pixel-Flow", layout="wide")
 
@@ -108,6 +118,9 @@ if "results" in st.session_state:
 
     st.subheader("Review extracted data")
 
+    # Show ALL available fields in the review table (not just a fixed
+    # subset), so the user can see everything we detected before
+    # deciding what to export.
     rows = []
     for txn in results:
         rows.append({
@@ -117,6 +130,7 @@ if "results" in st.session_state:
             "Particular": txn.particular or "",
             "Amount": txn.amount if txn.amount is not None else None,
             "Remarks": txn.remarks or "",
+            "Transaction ID": txn.transaction_id or "",
             "Source File": txn.source_file,
         })
     rows.sort(key=lambda r: r["Date"] if r["Date"] else "9999-99-99")
@@ -128,18 +142,43 @@ if "results" in st.session_state:
         column_config={
             "Status": st.column_config.TextColumn(disabled=True),
             "Amount": st.column_config.NumberColumn(format="%.2f"),
+            "Transaction ID": st.column_config.TextColumn(disabled=True),
             "Source File": st.column_config.TextColumn(disabled=True),
         },
     )
 
-    if flagged > 0:
-        with st.expander(f"{flagged} item(s) that may need manual review", expanded=True):
-            for txn in results:
-                if txn.parse_warnings:
-                    st.write(f"**{txn.source_file}**: " + "; ".join(txn.parse_warnings))
+    st.caption("Rows marked \"Needs Review\" above may have missing or uncertain fields -- edit any cell directly to fix them.")
 
+    st.markdown(
+        '<p style="color:#F97316; font-weight:600; margin-bottom:0.3rem; margin-top:1rem;">'
+        'Customize column titles for your export:</p>',
+        unsafe_allow_html=True,
+    )
+    export_columns = []
+    for field_info in AVAILABLE_FIELDS:
+        toggle_slot, title_slot = st.columns([1, 5])
+        with toggle_slot:
+            include = st.checkbox(
+                field_info["default_title"],
+                value=field_info["default_on"],
+                key=f"include_{field_info['field']}",
+            )
+        with title_slot:
+            title = st.text_input(
+                "Column title",
+                value=field_info["default_title"],
+                key=f"title_{field_info['field']}",
+                label_visibility="collapsed",
+                disabled=not include,
+            )
+        if include:
+            export_columns.append({"field": field_info["field"], "title": title or field_info["default_title"]})
+
+    # --- Export ---
     st.subheader("Export")
-    if st.button("Generate Excel file", type="primary"):
+    if not export_columns:
+        st.warning("Select at least one column above to export.")
+    elif st.button("Generate Excel file", type="primary"):
         final_transactions = []
         for row in edited_rows:
             amount = row.get("Amount")
@@ -149,9 +188,11 @@ if "results" in st.session_state:
                 particular=row.get("Particular") or None,
                 amount=amount if amount not in (None, "") else None,
                 remarks=row.get("Remarks") or None,
+                transaction_id=row.get("Transaction ID") or None,
+                source_file=row.get("Source File") or None,
             ))
 
-        wb = build_workbook(final_transactions)
+        wb = build_workbook(final_transactions, export_columns)
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
