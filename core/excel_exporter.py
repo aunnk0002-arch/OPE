@@ -1,77 +1,60 @@
 """
 core/excel_exporter.py
 
-Takes a list of Transaction objects and builds a .xlsx file using either
-an imported custom template or the default export layout.
+Builds a fixed Excel workbook from parsed transaction rows.
 """
 
-from typing import Optional
+from typing import Any, Dict, List
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from config import ROW_NUMBERING_MODE
-from core.template_store import DEFAULT_TEMPLATE, load_template
 
 
-def build_workbook(transactions: list, template: Optional[dict] = None) -> Workbook:
-    """
-    transactions: list of Transaction objects (see models/transaction.py)
-    template: optional template dictionary containing custom column layout
-    Returns an openpyxl Workbook ready to be saved or streamed to the browser.
-    """
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Transactions"
+def build_workbook(transactions: list):
+    """Return an openpyxl workbook for the supplied transactions."""
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Transactions"
 
-    selected_template = template or load_template("Default") or DEFAULT_TEMPLATE
-    columns = selected_template.get("columns", DEFAULT_TEMPLATE["columns"])
-
+    headers = ["Row", "Date", "Category", "Particular", "Amount", "Remarks"]
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
 
-    for col_idx, col in enumerate(columns, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=col.get("header", ""))
+    for col_idx, header in enumerate(headers, start=1):
+        cell = worksheet.cell(row=1, column=col_idx, value=header)
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
 
     row_numbers = _compute_row_numbers(transactions)
+    for index, txn in enumerate(transactions):
+        row_idx = index + 2
+        worksheet.cell(row=row_idx, column=1, value=row_numbers[index])
+        worksheet.cell(row=row_idx, column=2, value=txn.date or "")
+        worksheet.cell(row=row_idx, column=3, value=txn.category or "")
+        worksheet.cell(row=row_idx, column=4, value=txn.particular or "")
+        worksheet.cell(row=row_idx, column=5, value=txn.amount if txn.amount is not None else "")
+        worksheet.cell(row=row_idx, column=6, value=txn.remarks or "")
 
-    for i, txn in enumerate(transactions):
-        row_idx = i + 2
-        row_data = {
-            "row_number": row_numbers[i],
-            "date": txn.date or "",
-            "category": txn.category or "",
-            "particular": txn.particular or "",
-            "amount": txn.amount if txn.amount is not None else "",
-            "remarks": txn.remarks or "",
-            "working": "",
-        }
-        for col_idx, col in enumerate(columns, start=1):
-            key = col.get("key", "")
-            value = row_data.get(key, "")
-            ws.cell(row=row_idx, column=col_idx, value=value)
+    for col_idx in range(1, len(headers) + 1):
+        worksheet.column_dimensions[get_column_letter(col_idx)].width = 16
 
-    for col_idx, _ in enumerate(columns, start=1):
-        letter = get_column_letter(col_idx)
-        ws.column_dimensions[letter].width = 15
-
-    ws.freeze_panes = "A2"
-    return wb
+    worksheet.freeze_panes = "A2"
+    return workbook
 
 
-def _compute_row_numbers(transactions: list) -> list:
-    """Returns the '#' value for each transaction, according to config.ROW_NUMBERING_MODE."""
+def _compute_row_numbers(transactions: List[Any]) -> List[int]:
+    """Return the row-number sequence for the supplied transactions."""
     if ROW_NUMBERING_MODE == "continuous":
         return list(range(1, len(transactions) + 1))
 
     numbers = []
-    counters = {}
+    counters: Dict[str, int] = {}
     for txn in transactions:
-        cat = txn.category or "Unknown"
-        counters[cat] = counters.get(cat, 0) + 1
-        numbers.append(counters[cat])
+        category = txn.category or "Unknown"
+        counters[category] = counters.get(category, 0) + 1
+        numbers.append(counters[category])
     return numbers
